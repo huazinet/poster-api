@@ -59,15 +59,22 @@ def hex_to_rgb(hex_color):
 def get_font(size):
     """获取字体"""
     try:
-        # 获取当前文件所在目录
-        current_dir = Path(__file__).parent
-        font_path = current_dir / 'NotoSansSC-Bold.otf'
+        # 尝试使用系统字体
+        system_fonts = [
+            '/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc',  # Linux
+            '/System/Library/Fonts/PingFang.ttc',  # macOS
+            'C:/Windows/Fonts/msyh.ttc',  # Windows
+            '/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf',  # Linux
+        ]
         
-        # 如果字体文件存在，使用它
-        if font_path.exists():
-            return ImageFont.truetype(str(font_path), size)
+        for font_path in system_fonts:
+            try:
+                if os.path.exists(font_path):
+                    return ImageFont.truetype(font_path, size)
+            except Exception:
+                continue
         
-        # 否则使用默认字体
+        # 如果找不到任何中文字体，使用默认字体
         return ImageFont.load_default()
     except Exception as e:
         print(f"字体加载错误: {str(e)}")
