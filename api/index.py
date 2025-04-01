@@ -3,9 +3,11 @@ from http.server import BaseHTTPRequestHandler
 import json
 import random
 import base64
-from html2image import Html2Image
-import tempfile
 import os
+import chrome_aws_lambda
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+import tempfile
 
 # 颜色方案
 COLOR_SCHEMES = [
@@ -191,8 +193,8 @@ def create_html(text: str, colors: dict) -> str:
     </html>
     """
 
-def create_png_image(text: str) -> bytes:
-    """使用HTML生成PNG图片"""
+async def create_png_image(text: str) -> bytes:
+    """使用Chrome AWS Lambda生成PNG图片"""
     try:
         # 随机选择颜色方案
         colors = random.choice(COLOR_SCHEMES)
@@ -200,22 +202,37 @@ def create_png_image(text: str) -> bytes:
         # 生成HTML内容
         html_content = create_html(text, colors)
         
-        # 创建临时目录
+        # 创建临时目录和临时HTML文件
         with tempfile.TemporaryDirectory() as temp_dir:
-            # 初始化html2image
-            hti = Html2Image(output_path=temp_dir)
+            html_path = os.path.join(temp_dir, 'temp.html')
+            with open(html_path, 'w', encoding='utf-8') as f:
+                f.write(html_content)
             
-            # 设置截图大小
-            hti.screenshot(
-                html_str=html_content,
-                save_as='output.png',
-                size=(1080, 1080)
-            )
+            # 设置Chrome选项
+            browser = await chrome_aws_lambda.launch({
+                'defaultViewport': {
+                    'width': 1080,
+                    'height': 1080,
+                    'deviceScaleFactor': 2
+                }
+            })
             
-            # 读取生成的图片
-            output_path = os.path.join(temp_dir, 'output.png')
-            with open(output_path, 'rb') as f:
-                return f.read()
+            # 创建新页面
+            page = await browser.newPage()
+            
+            # 导航到HTML文件
+            await page.goto(f'file://{html_path}')
+            
+            # 等待字体加载
+            await page.waitForTimeout(1000)
+            
+            # 截图
+            screenshot = await page.screenshot({'type': 'png'})
+            
+            # 关闭浏览器
+            await browser.close()
+            
+            return screenshot
             
     except Exception as e:
         print(f"创建PNG图片错误: {str(e)}")
@@ -237,7 +254,7 @@ class handler(BaseHTTPRequestHandler):
         self._set_headers()
         self.wfile.write(json.dumps({"status": "API is running"}).encode())
 
-    def do_POST(self):
+    async def do_POST(self):
         try:
             content_length = int(self.headers['Content-Length'])
             post_data = self.rfile.read(content_length)
@@ -252,7 +269,7 @@ class handler(BaseHTTPRequestHandler):
                 return
 
             # 生成PNG图片
-            png_data = create_png_image(data['text'])
+            png_data = await create_png_image(data['text'])
             
             # 转换为base64
             base64_png = base64.b64encode(png_data).decode('utf-8')
