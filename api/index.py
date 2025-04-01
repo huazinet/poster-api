@@ -1,8 +1,8 @@
 from http.server import BaseHTTPRequestHandler
 import json
 import random
-import requests
 import traceback
+import base64
 
 # 颜色方案 - 对应不同的模板
 COLOR_SCHEMES = [
@@ -88,33 +88,15 @@ def create_svg_image(text):
         traceback.print_exc()
         raise
 
-def upload_to_imgbb(svg_content):
-    """将SVG上传到ImgBB并返回URL"""
+def svg_to_base64(svg_content):
+    """将SVG转换为base64编码"""
     try:
-        imgbb_api_key = "44b4d3a8024b4abd4b7a94139dcfcf0f"  # 免费API密钥
-        
-        # 向imgbb发送请求
-        response = requests.post(
-            "https://api.imgbb.com/1/upload",
-            params={"key": imgbb_api_key},
-            data={"image": svg_content}
-        )
-        
-        print(f"ImgBB响应状态码: {response.status_code}")
-        
-        if response.status_code != 200:
-            print(f"ImgBB响应内容: {response.text}")
-            raise Exception(f"ImgBB API错误: {response.status_code}")
-        
-        result = response.json()
-        if not result.get("success"):
-            print(f"ImgBB结果: {result}")
-            raise Exception(f"ImgBB上传失败")
-        
-        # 返回图片URL
-        return result["data"]["url"]
+        # 将SVG内容编码为base64
+        svg_bytes = svg_content.encode('utf-8')
+        base64_svg = base64.b64encode(svg_bytes).decode('utf-8')
+        return base64_svg
     except Exception as e:
-        print(f"上传到ImgBB错误: {str(e)}")
+        print(f"转换为base64时出错: {str(e)}")
         traceback.print_exc()
         raise
 
@@ -149,31 +131,18 @@ class handler(BaseHTTPRequestHandler):
             
             # 创建SVG
             try:
+                # 生成SVG内容
                 svg_content = create_svg_image(data['text'])
                 
-                # 尝试直接使用纯SVG返回（方案1）
-                try:
-                    direct_svg_url = f"data:image/svg+xml;base64,{base64.b64encode(svg_content.encode()).decode()}"
-                    
-                    # 返回结果
-                    self._set_headers()
-                    response_data = {
-                        "success": True,
-                        "image_url": direct_svg_url
-                    }
-                    self.wfile.write(json.dumps(response_data).encode())
-                    return
-                except Exception as e:
-                    print(f"直接SVG返回失败，尝试备用方案: {str(e)}")
-                
-                # 上传到ImgBB（方案2）
-                image_url = upload_to_imgbb(svg_content)
+                # 将SVG转换为base64
+                base64_image = svg_to_base64(svg_content)
                 
                 # 返回结果
                 self._set_headers()
                 response_data = {
                     "success": True,
-                    "image_url": image_url
+                    "image_base64": base64_image,
+                    "content_type": "image/svg+xml"
                 }
                 self.wfile.write(json.dumps(response_data).encode())
                 
