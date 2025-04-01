@@ -1,19 +1,15 @@
 {
   "version": 2,
   "functions": {
-    "api/generate.py": {
+    "api/index.py": {
       "memory": 1024,
       "maxDuration": 10
     }
   },
   "routes": [
     {
-      "src": "/api/generate",
-      "dest": "/api/generate.py"
-    },
-    {
       "src": "/(.*)",
-      "dest": "/api/generate.py"
+      "dest": "/api/index.py"
     }
   ]
 }
