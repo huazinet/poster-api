@@ -6,10 +6,12 @@
 from http.server import BaseHTTPRequestHandler
 import json
 import random
-import traceback
+from PIL import Image, ImageDraw, ImageFont
+import io
 import base64
+import traceback
 
-# 颜色方案 - 对应不同的模板
+# 颜色方案
 COLOR_SCHEMES = [
     {
         'name': 'pink',
@@ -52,68 +54,77 @@ EMOJI_SETS = [
     "🌈 💫 ✨"
 ]
 
+def hex_to_rgb(hex_color):
+    """将十六进制颜色转换为RGB元组"""
+    hex_color = hex_color.lstrip('#')
+    return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
 
-def create_svg_image(text):
-    """创建SVG图像"""
+def create_png_image(text: str) -> bytes:
+    """直接创建PNG图像"""
+    # 创建图像
+    width, height = 1080, 1080
+    image = Image.new('RGB', (width, height), 'white')
+    draw = ImageDraw.Draw(image)
+    
+    # 随机选择颜色方案和表情符号
+    colors = random.choice(COLOR_SCHEMES)
+    emojis = random.choice(EMOJI_SETS)
+    
+    # 分割文本
+    lines = text.split('\n')
+    if len(lines) < 3:
+        lines.extend([''] * (3 - len(lines)))
+    
+    # 转换颜色
+    primary_color = hex_to_rgb(colors['primary'])
+    accent_color = hex_to_rgb(colors['accent'])
+    bg_circle_color = hex_to_rgb(colors['bg_circle'])
+    
+    # 绘制背景圆圈
+    draw.ellipse([600, -120, 1200, 480], fill=bg_circle_color, width=0)
+    
+    # 绘制装饰点
+    for x in [100, 130, 160]:
+        draw.ellipse([x-8, 92, x+8, 108], fill=accent_color)
+    
+    # 加载字体（这里需要确保字体文件存在）
     try:
-        # 随机选择颜色方案和表情符号
-        colors = random.choice(COLOR_SCHEMES)
-        emojis = random.choice(EMOJI_SETS)
-        
-        # 分割文本
-        lines = text.split('\n')
-        if len(lines) < 3:
-            lines.extend([''] * (3 - len(lines)))
-        
-        # 转义XML特殊字符
-        for i in range(len(lines)):
-            lines[i] = lines[i].replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;').replace("'", '&apos;')
-        
-        # 构建SVG图像
-        svg_content = f'''<?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<svg width="1080" height="1080" xmlns="http://www.w3.org/2000/svg">
-    <rect width="1080" height="1080" fill="white"/>
-    <circle cx="900" cy="180" r="300" fill="{colors['bg_circle']}" opacity="0.7"/>
-    <circle cx="100" cy="100" r="8" fill="{colors['accent']}" opacity="0.8"/>
-    <circle cx="130" cy="100" r="8" fill="{colors['accent']}" opacity="0.8"/>
-    <circle cx="160" cy="100" r="8" fill="{colors['accent']}" opacity="0.8"/>
-    <text x="540" y="350" font-family="'Noto Sans SC', sans-serif" font-size="80" font-weight="bold" fill="{colors['primary']}" text-anchor="middle">{lines[0]}</text>
-    <g>
-        <rect x="270" y="420" width="540" height="100" rx="10" fill="{colors['accent']}" opacity="0.2"/>
-        <text x="540" y="490" font-family="'Noto Sans SC', sans-serif" font-size="70" font-weight="bold" fill="{colors['primary']}" text-anchor="middle">{lines[1]}</text>
-        <rect x="320" y="530" width="440" height="8" fill="{colors['accent']}" opacity="0.7"/>
-    </g>
-    <text x="540" y="620" font-family="'Noto Sans SC', sans-serif" font-size="70" font-weight="bold" fill="{colors['primary']}" text-anchor="middle">{lines[2]}</text>
-    <text x="540" y="740" font-family="'Noto Sans SC', sans-serif" font-size="40" fill="{colors['primary']}" text-anchor="middle">{emojis}</text>
-</svg>'''
-        
-        print(f"生成的SVG长度: {len(svg_content)} 字节")
-        return svg_content
-    except Exception as e:
-        print(f"创建SVG错误: {str(e)}")
-        traceback.print_exc()
-        raise
-
-
-def svg_to_base64(svg_content):
-    """将SVG转换为base64编码"""
-    try:
-        # 将SVG内容编码为base64
-        svg_bytes = svg_content.encode('utf-8')
-        base64_svg = base64.b64encode(svg_bytes).decode('utf-8')
-        print(f"base64编码后长度: {len(base64_svg)}")
-        print(f"base64数据前20个字符: {base64_svg[:20]}...")
-        return base64_svg
-    except Exception as e:
-        print(f"转换为base64时出错: {str(e)}")
-        traceback.print_exc()
-        raise
-
+        font_large = ImageFont.truetype("/System/Library/Fonts/PingFang.ttc", 80)
+        font_medium = ImageFont.truetype("/System/Library/Fonts/PingFang.ttc", 70)
+        font_small = ImageFont.truetype("/System/Library/Fonts/PingFang.ttc", 40)
+    except:
+        # 如果找不到PingFang字体，使用默认字体
+        font_large = ImageFont.load_default()
+        font_medium = ImageFont.load_default()
+        font_small = ImageFont.load_default()
+    
+    # 绘制文本
+    # 第一行文本
+    draw.text((540, 350), lines[0], font=font_large, fill=primary_color, anchor="mm")
+    
+    # 第二行文本背景
+    draw.rectangle([270, 420, 810, 520], fill=accent_color + (51,))  # 20% 透明度
+    draw.text((540, 490), lines[1], font=font_medium, fill=primary_color, anchor="mm")
+    
+    # 装饰线
+    draw.rectangle([320, 530, 760, 538], fill=accent_color + (179,))  # 70% 透明度
+    
+    # 第三行文本
+    draw.text((540, 620), lines[2], font=font_medium, fill=primary_color, anchor="mm")
+    
+    # 表情符号
+    draw.text((540, 740), emojis, font=font_small, fill=primary_color, anchor="mm")
+    
+    # 将图像转换为bytes
+    img_byte_arr = io.BytesIO()
+    image.save(img_byte_arr, format='PNG')
+    img_byte_arr.seek(0)
+    return img_byte_arr.getvalue()
 
 class handler(BaseHTTPRequestHandler):
-    def _set_headers(self, status_code=200, content_type='application/json'):
+    def _set_headers(self, status_code=200):
         self.send_response(status_code)
-        self.send_header('Content-type', content_type)
+        self.send_header('Content-type', 'application/json')
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
         self.send_header('Access-Control-Allow-Headers', 'X-Requested-With, Content-Type')
@@ -132,8 +143,6 @@ class handler(BaseHTTPRequestHandler):
             post_data = self.rfile.read(content_length)
             data = json.loads(post_data.decode('utf-8'))
 
-            print(f"收到请求: {data}")
-
             if 'text' not in data:
                 self._set_headers(400)
                 self.wfile.write(json.dumps({
@@ -142,36 +151,23 @@ class handler(BaseHTTPRequestHandler):
                 }).encode())
                 return
 
-            # 创建SVG
-            try:
-                # 生成SVG内容
-                svg_content = create_svg_image(data['text'])
-
-                # 将SVG转换为base64
-                base64_image = svg_to_base64(svg_content)
-
-                # 返回结果
-                self._set_headers()
-                response_data = {
-                    "success": True,
-                    "image_base64": base64_image,
-                    "content_type": "image/svg+xml"
-                }
-                print(f"响应数据长度: {len(json.dumps(response_data))}")
-                self.wfile.write(json.dumps(response_data).encode())
-
-            except Exception as e:
-                print(f"处理SVG时出错: {str(e)}")
-                traceback.print_exc()
-                self._set_headers(500)
-                self.wfile.write(json.dumps({
-                    "success": False,
-                    "error": f"生成图片时出错: {str(e)}"
-                }).encode())
+            # 生成PNG图片
+            png_data = create_png_image(data['text'])
+            
+            # 转换为base64
+            base64_png = base64.b64encode(png_data).decode('utf-8')
+            
+            # 返回base64数据
+            self._set_headers()
+            response_data = {
+                "success": True,
+                "image_base64": base64_png,
+                "content_type": "image/png"
+            }
+            
+            self.wfile.write(json.dumps(response_data).encode())
 
         except Exception as e:
-            print(f"请求处理错误: {str(e)}")
-            traceback.print_exc()
             self._set_headers(500)
             self.wfile.write(json.dumps({
                 "success": False,
