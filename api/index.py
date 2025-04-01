@@ -2,12 +2,11 @@
 from http.server import BaseHTTPRequestHandler
 import json
 import random
+from PIL import Image, ImageDraw, ImageFont
+import io
 import base64
 import os
-import chrome_aws_lambda
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-import tempfile
+from pathlib import Path
 
 # 颜色方案
 COLOR_SCHEMES = [
@@ -52,188 +51,93 @@ EMOJI_SETS = [
     "🌈 💫 ✨"
 ]
 
-def create_html(text: str, colors: dict) -> str:
-    """创建HTML内容"""
-    lines = text.split('\n')
-    if len(lines) < 3:
-        lines.extend([''] * (3 - len(lines)))
-    
-    emojis = random.choice(EMOJI_SETS)
-    
-    return f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
-        <style>
-            body {{
-                margin: 0;
-                padding: 0;
-                width: 1080px;
-                height: 1080px;
-                background: white;
-                font-family: 'Noto Sans SC', sans-serif;
-                overflow: hidden;
-                position: relative;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            }}
-            
-            .background-circle {{
-                position: absolute;
-                top: -120px;
-                right: -120px;
-                width: 600px;
-                height: 600px;
-                border-radius: 50%;
-                background: {colors['bg_circle']};
-                opacity: 0.7;
-            }}
-            
-            .dots {{
-                position: absolute;
-                top: 92px;
-                left: 92px;
-                display: flex;
-                gap: 30px;
-            }}
-            
-            .dot {{
-                width: 16px;
-                height: 16px;
-                border-radius: 50%;
-                background: {colors['accent']};
-                opacity: 0.8;
-            }}
-            
-            .content {{
-                position: relative;
-                width: 900px;
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                gap: 40px;
-                padding: 60px;
-                box-sizing: border-box;
-            }}
-            
-            .line1 {{
-                font-size: 80px;
-                font-weight: bold;
-                color: {colors['primary']};
-                text-align: center;
-                line-height: 1.4;
-                margin: 0;
-            }}
-            
-            .line2-container {{
-                background: {colors['accent']};
-                opacity: 0.2;
-                padding: 30px 50px;
-                border-radius: 15px;
-                position: relative;
-            }}
-            
-            .line2 {{
-                font-size: 70px;
-                font-weight: bold;
-                color: {colors['primary']};
-                text-align: center;
-                line-height: 1.4;
-                margin: 0;
-                position: relative;
-                z-index: 1;
-            }}
-            
-            .decoration-line {{
-                width: 440px;
-                height: 8px;
-                background: {colors['accent']};
-                opacity: 0.7;
-                margin: 20px 0;
-                border-radius: 4px;
-            }}
-            
-            .line3 {{
-                font-size: 70px;
-                font-weight: bold;
-                color: {colors['primary']};
-                text-align: center;
-                line-height: 1.4;
-                margin: 0;
-            }}
-            
-            .emojis {{
-                font-size: 40px;
-                color: {colors['primary']};
-                text-align: center;
-                margin-top: 20px;
-            }}
-        </style>
-    </head>
-    <body>
-        <div class="background-circle"></div>
-        <div class="dots">
-            <div class="dot"></div>
-            <div class="dot"></div>
-            <div class="dot"></div>
-        </div>
-        <div class="content">
-            <h1 class="line1">{lines[0]}</h1>
-            <div class="line2-container">
-                <h2 class="line2">{lines[1]}</h2>
-            </div>
-            <div class="decoration-line"></div>
-            <h2 class="line3">{lines[2]}</h2>
-            <div class="emojis">{emojis}</div>
-        </div>
-    </body>
-    </html>
-    """
+def hex_to_rgb(hex_color):
+    """将十六进制颜色转换为RGB元组"""
+    hex_color = hex_color.lstrip('#')
+    return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
 
-async def create_png_image(text: str) -> bytes:
-    """使用Chrome AWS Lambda生成PNG图片"""
+def get_font(size):
+    """获取字体"""
     try:
-        # 随机选择颜色方案
+        # 获取当前文件所在目录
+        current_dir = Path(__file__).parent
+        font_path = current_dir / 'NotoSansSC-Bold.otf'
+        
+        # 如果字体文件存在，使用它
+        if font_path.exists():
+            return ImageFont.truetype(str(font_path), size)
+        
+        # 否则使用默认字体
+        return ImageFont.load_default()
+    except Exception as e:
+        print(f"字体加载错误: {str(e)}")
+        return ImageFont.load_default()
+
+def create_png_image(text: str) -> bytes:
+    """创建PNG图像"""
+    try:
+        # 创建图像
+        width, height = 1080, 1080
+        image = Image.new('RGB', (width, height), 'white')
+        draw = ImageDraw.Draw(image)
+        
+        # 随机选择颜色方案和表情符号
         colors = random.choice(COLOR_SCHEMES)
+        emojis = random.choice(EMOJI_SETS)
         
-        # 生成HTML内容
-        html_content = create_html(text, colors)
+        # 分割文本
+        lines = text.split('\n')
+        if len(lines) < 3:
+            lines.extend([''] * (3 - len(lines)))
         
-        # 创建临时目录和临时HTML文件
-        with tempfile.TemporaryDirectory() as temp_dir:
-            html_path = os.path.join(temp_dir, 'temp.html')
-            with open(html_path, 'w', encoding='utf-8') as f:
-                f.write(html_content)
-            
-            # 设置Chrome选项
-            browser = await chrome_aws_lambda.launch({
-                'defaultViewport': {
-                    'width': 1080,
-                    'height': 1080,
-                    'deviceScaleFactor': 2
-                }
-            })
-            
-            # 创建新页面
-            page = await browser.newPage()
-            
-            # 导航到HTML文件
-            await page.goto(f'file://{html_path}')
-            
-            # 等待字体加载
-            await page.waitForTimeout(1000)
-            
-            # 截图
-            screenshot = await page.screenshot({'type': 'png'})
-            
-            # 关闭浏览器
-            await browser.close()
-            
-            return screenshot
-            
+        # 转换颜色
+        primary_color = hex_to_rgb(colors['primary'])
+        accent_color = hex_to_rgb(colors['accent'])
+        bg_circle_color = hex_to_rgb(colors['bg_circle'])
+        
+        # 绘制背景圆圈
+        draw.ellipse([600, -120, 1200, 480], fill=bg_circle_color)
+        
+        # 绘制装饰点
+        for x in [100, 130, 160]:
+            draw.ellipse([x-8, 92, x+8, 108], fill=accent_color)
+        
+        # 获取字体
+        font_large = get_font(80)
+        font_medium = get_font(70)
+        font_small = get_font(40)
+        
+        # 绘制文本
+        # 第一行文本
+        draw.text((540, 350), lines[0], font=font_large, fill=primary_color, anchor="mm")
+        
+        # 第二行文本背景
+        text_bbox = draw.textbbox((540, 490), lines[1], font=font_medium, anchor="mm")
+        padding = 40
+        bg_rect = [
+            text_bbox[0] - padding,
+            text_bbox[1] - padding,
+            text_bbox[2] + padding,
+            text_bbox[3] + padding
+        ]
+        draw.rectangle(bg_rect, fill=accent_color + (51,))  # 20% 透明度
+        draw.text((540, 490), lines[1], font=font_medium, fill=primary_color, anchor="mm")
+        
+        # 装饰线
+        draw.rectangle([320, 530, 760, 538], fill=accent_color + (179,))  # 70% 透明度
+        
+        # 第三行文本
+        draw.text((540, 620), lines[2], font=font_medium, fill=primary_color, anchor="mm")
+        
+        # 表情符号
+        draw.text((540, 740), emojis, font=font_small, fill=primary_color, anchor="mm")
+        
+        # 将图像转换为bytes
+        img_byte_arr = io.BytesIO()
+        image.save(img_byte_arr, format='PNG')
+        img_byte_arr.seek(0)
+        return img_byte_arr.getvalue()
+        
     except Exception as e:
         print(f"创建PNG图片错误: {str(e)}")
         raise
@@ -254,7 +158,7 @@ class handler(BaseHTTPRequestHandler):
         self._set_headers()
         self.wfile.write(json.dumps({"status": "API is running"}).encode())
 
-    async def do_POST(self):
+    def do_POST(self):
         try:
             content_length = int(self.headers['Content-Length'])
             post_data = self.rfile.read(content_length)
@@ -269,7 +173,7 @@ class handler(BaseHTTPRequestHandler):
                 return
 
             # 生成PNG图片
-            png_data = await create_png_image(data['text'])
+            png_data = create_png_image(data['text'])
             
             # 转换为base64
             base64_png = base64.b64encode(png_data).decode('utf-8')
