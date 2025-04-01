@@ -1,3 +1,8 @@
+# -*- coding: utf-8 -*-
+# @Time    : 2025/4/1 16:33
+# @Author  : huazi
+# @File    : index.py
+
 from http.server import BaseHTTPRequestHandler
 import json
 import random
@@ -47,13 +52,12 @@ EMOJI_SETS = [
     "🌈 💫 ✨"
 ]
 
+
 def create_svg_image(text):
     """创建SVG图像"""
     try:
-        # 随机选择颜色方案
+        # 随机选择颜色方案和表情符号
         colors = random.choice(COLOR_SCHEMES)
-        
-        # 随机选择表情符号
         emojis = random.choice(EMOJI_SETS)
         
         # 分割文本
@@ -66,7 +70,8 @@ def create_svg_image(text):
             lines[i] = lines[i].replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;').replace("'", '&apos;')
         
         # 构建SVG图像
-        svg_content = f"""<svg width="1080" height="1080" xmlns="http://www.w3.org/2000/svg">
+        svg_content = f'''<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg width="1080" height="1080" xmlns="http://www.w3.org/2000/svg">
     <rect width="1080" height="1080" fill="white"/>
     <circle cx="900" cy="180" r="300" fill="{colors['bg_circle']}" opacity="0.7"/>
     <circle cx="100" cy="100" r="8" fill="{colors['accent']}" opacity="0.8"/>
@@ -80,13 +85,15 @@ def create_svg_image(text):
     </g>
     <text x="540" y="620" font-family="'Noto Sans SC', sans-serif" font-size="70" font-weight="bold" fill="{colors['primary']}" text-anchor="middle">{lines[2]}</text>
     <text x="540" y="740" font-family="'Noto Sans SC', sans-serif" font-size="40" fill="{colors['primary']}" text-anchor="middle">{emojis}</text>
-</svg>"""
+</svg>'''
         
+        print(f"生成的SVG长度: {len(svg_content)} 字节")
         return svg_content
     except Exception as e:
         print(f"创建SVG错误: {str(e)}")
         traceback.print_exc()
         raise
+
 
 def svg_to_base64(svg_content):
     """将SVG转换为base64编码"""
@@ -94,11 +101,14 @@ def svg_to_base64(svg_content):
         # 将SVG内容编码为base64
         svg_bytes = svg_content.encode('utf-8')
         base64_svg = base64.b64encode(svg_bytes).decode('utf-8')
+        print(f"base64编码后长度: {len(base64_svg)}")
+        print(f"base64数据前20个字符: {base64_svg[:20]}...")
         return base64_svg
     except Exception as e:
         print(f"转换为base64时出错: {str(e)}")
         traceback.print_exc()
         raise
+
 
 class handler(BaseHTTPRequestHandler):
     def _set_headers(self, status_code=200, content_type='application/json'):
@@ -108,35 +118,38 @@ class handler(BaseHTTPRequestHandler):
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
         self.send_header('Access-Control-Allow-Headers', 'X-Requested-With, Content-Type')
         self.end_headers()
-    
+
     def do_OPTIONS(self):
         self._set_headers()
-    
+
     def do_GET(self):
         self._set_headers()
         self.wfile.write(json.dumps({"status": "API is running"}).encode())
-    
+
     def do_POST(self):
         try:
             content_length = int(self.headers['Content-Length'])
             post_data = self.rfile.read(content_length)
             data = json.loads(post_data.decode('utf-8'))
-            
+
             print(f"收到请求: {data}")
-            
+
             if 'text' not in data:
                 self._set_headers(400)
-                self.wfile.write(json.dumps({"success": False, "error": "Missing required parameter: text"}).encode())
+                self.wfile.write(json.dumps({
+                    "success": False,
+                    "error": "Missing required parameter: text"
+                }).encode())
                 return
-            
+
             # 创建SVG
             try:
                 # 生成SVG内容
                 svg_content = create_svg_image(data['text'])
-                
+
                 # 将SVG转换为base64
                 base64_image = svg_to_base64(svg_content)
-                
+
                 # 返回结果
                 self._set_headers()
                 response_data = {
@@ -144,16 +157,23 @@ class handler(BaseHTTPRequestHandler):
                     "image_base64": base64_image,
                     "content_type": "image/svg+xml"
                 }
+                print(f"响应数据长度: {len(json.dumps(response_data))}")
                 self.wfile.write(json.dumps(response_data).encode())
-                
+
             except Exception as e:
                 print(f"处理SVG时出错: {str(e)}")
                 traceback.print_exc()
                 self._set_headers(500)
-                self.wfile.write(json.dumps({"success": False, "error": f"生成图片时出错: {str(e)}"}).encode())
-                
+                self.wfile.write(json.dumps({
+                    "success": False,
+                    "error": f"生成图片时出错: {str(e)}"
+                }).encode())
+
         except Exception as e:
             print(f"请求处理错误: {str(e)}")
             traceback.print_exc()
             self._set_headers(500)
-            self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode())
+            self.wfile.write(json.dumps({
+                "success": False,
+                "error": str(e)
+            }).encode())
