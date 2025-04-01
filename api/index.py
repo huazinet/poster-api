@@ -2,10 +2,9 @@
 from http.server import BaseHTTPRequestHandler
 import json
 import random
-from PIL import Image, ImageDraw, ImageFont
-import io
 import base64
-import traceback
+from playwright.sync_api import sync_playwright
+import os
 
 # 颜色方案
 COLOR_SCHEMES = [
@@ -50,94 +49,175 @@ EMOJI_SETS = [
     "🌈 💫 ✨"
 ]
 
-def hex_to_rgb(hex_color):
-    """将十六进制颜色转换为RGB元组"""
-    hex_color = hex_color.lstrip('#')
-    return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
-
-def get_font(size):
-    """获取字体，如果找不到系统字体则使用默认字体"""
-    try:
-        # 尝试多个可能的字体路径
-        font_paths = [
-            "/System/Library/Fonts/PingFang.ttc",
-            "/System/Library/Fonts/STHeiti Light.ttc",
-            "/System/Library/Fonts/STHeiti Medium.ttc",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
-        ]
-        
-        for font_path in font_paths:
-            try:
-                return ImageFont.truetype(font_path, size)
-            except:
-                continue
-                
-        # 如果都失败了，使用默认字体
-        return ImageFont.load_default()
-    except Exception as e:
-        print(f"字体加载错误: {str(e)}")
-        return ImageFont.load_default()
+def create_html(text: str, colors: dict) -> str:
+    """创建HTML内容"""
+    lines = text.split('\n')
+    if len(lines) < 3:
+        lines.extend([''] * (3 - len(lines)))
+    
+    emojis = random.choice(EMOJI_SETS)
+    
+    return f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <style>
+            @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap');
+            
+            body {{
+                margin: 0;
+                padding: 0;
+                width: 1080px;
+                height: 1080px;
+                background: white;
+                font-family: 'Noto Sans SC', sans-serif;
+                overflow: hidden;
+                position: relative;
+            }}
+            
+            .background-circle {{
+                position: absolute;
+                top: -120px;
+                right: -120px;
+                width: 600px;
+                height: 600px;
+                border-radius: 50%;
+                background: {colors['bg_circle']};
+                opacity: 0.7;
+            }}
+            
+            .dots {{
+                position: absolute;
+                top: 92px;
+                left: 92px;
+                display: flex;
+                gap: 30px;
+            }}
+            
+            .dot {{
+                width: 16px;
+                height: 16px;
+                border-radius: 50%;
+                background: {colors['accent']};
+                opacity: 0.8;
+            }}
+            
+            .content {{
+                position: relative;
+                width: 100%;
+                height: 100%;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                padding: 40px;
+                box-sizing: border-box;
+            }}
+            
+            .line1 {{
+                font-size: 80px;
+                font-weight: bold;
+                color: {colors['primary']};
+                margin-bottom: 40px;
+                text-align: center;
+                max-width: 900px;
+                line-height: 1.2;
+            }}
+            
+            .line2-container {{
+                background: {colors['accent']};
+                opacity: 0.2;
+                padding: 20px 40px;
+                border-radius: 10px;
+                margin-bottom: 20px;
+            }}
+            
+            .line2 {{
+                font-size: 70px;
+                font-weight: bold;
+                color: {colors['primary']};
+                text-align: center;
+                max-width: 800px;
+                line-height: 1.2;
+            }}
+            
+            .decoration-line {{
+                width: 440px;
+                height: 8px;
+                background: {colors['accent']};
+                opacity: 0.7;
+                margin: 20px 0;
+            }}
+            
+            .line3 {{
+                font-size: 70px;
+                font-weight: bold;
+                color: {colors['primary']};
+                text-align: center;
+                max-width: 800px;
+                line-height: 1.2;
+                margin-bottom: 40px;
+            }}
+            
+            .emojis {{
+                font-size: 40px;
+                color: {colors['primary']};
+                text-align: center;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="background-circle"></div>
+        <div class="dots">
+            <div class="dot"></div>
+            <div class="dot"></div>
+            <div class="dot"></div>
+        </div>
+        <div class="content">
+            <div class="line1">{lines[0]}</div>
+            <div class="line2-container">
+                <div class="line2">{lines[1]}</div>
+            </div>
+            <div class="decoration-line"></div>
+            <div class="line3">{lines[2]}</div>
+            <div class="emojis">{emojis}</div>
+        </div>
+    </body>
+    </html>
+    """
 
 def create_png_image(text: str) -> bytes:
-    """直接创建PNG图像"""
+    """使用HTML生成PNG图片"""
     try:
-        # 创建图像
-        width, height = 1080, 1080
-        image = Image.new('RGB', (width, height), 'white')
-        draw = ImageDraw.Draw(image)
-        
-        # 随机选择颜色方案和表情符号
+        # 随机选择颜色方案
         colors = random.choice(COLOR_SCHEMES)
-        emojis = random.choice(EMOJI_SETS)
         
-        # 分割文本
-        lines = text.split('\n')
-        if len(lines) < 3:
-            lines.extend([''] * (3 - len(lines)))
+        # 生成HTML内容
+        html_content = create_html(text, colors)
         
-        # 转换颜色
-        primary_color = hex_to_rgb(colors['primary'])
-        accent_color = hex_to_rgb(colors['accent'])
-        bg_circle_color = hex_to_rgb(colors['bg_circle'])
-        
-        # 绘制背景圆圈
-        draw.ellipse([600, -120, 1200, 480], fill=bg_circle_color, width=0)
-        
-        # 绘制装饰点
-        for x in [100, 130, 160]:
-            draw.ellipse([x-8, 92, x+8, 108], fill=accent_color)
-        
-        # 获取字体
-        font_large = get_font(80)
-        font_medium = get_font(70)
-        font_small = get_font(40)
-        
-        # 绘制文本
-        # 第一行文本
-        draw.text((540, 350), lines[0], font=font_large, fill=primary_color, anchor="mm")
-        
-        # 第二行文本背景
-        draw.rectangle([270, 420, 810, 520], fill=accent_color + (51,))  # 20% 透明度
-        draw.text((540, 490), lines[1], font=font_medium, fill=primary_color, anchor="mm")
-        
-        # 装饰线
-        draw.rectangle([320, 530, 760, 538], fill=accent_color + (179,))  # 70% 透明度
-        
-        # 第三行文本
-        draw.text((540, 620), lines[2], font=font_medium, fill=primary_color, anchor="mm")
-        
-        # 表情符号
-        draw.text((540, 740), emojis, font=font_small, fill=primary_color, anchor="mm")
-        
-        # 将图像转换为bytes
-        img_byte_arr = io.BytesIO()
-        image.save(img_byte_arr, format='PNG')
-        img_byte_arr.seek(0)
-        return img_byte_arr.getvalue()
+        # 使用playwright生成图片
+        with sync_playwright() as p:
+            # 启动浏览器
+            browser = p.chromium.launch()
+            page = browser.new_page(viewport={'width': 1080, 'height': 1080})
+            
+            # 设置HTML内容
+            page.set_content(html_content)
+            
+            # 等待字体加载
+            page.wait_for_load_state('networkidle')
+            
+            # 截图
+            screenshot = page.screenshot(type='png')
+            
+            # 关闭浏览器
+            browser.close()
+            
+            return screenshot
+            
     except Exception as e:
         print(f"创建PNG图片错误: {str(e)}")
-        traceback.print_exc()
         raise
 
 class handler(BaseHTTPRequestHandler):
@@ -188,7 +268,6 @@ class handler(BaseHTTPRequestHandler):
 
         except Exception as e:
             print(f"请求处理错误: {str(e)}")
-            traceback.print_exc()
             self._set_headers(500)
             self.wfile.write(json.dumps({
                 "success": False,
