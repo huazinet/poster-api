@@ -1,143 +1,49 @@
 # -*- coding: utf-8 -*-
 from http.server import BaseHTTPRequestHandler
 import json
-import random
 from PIL import Image, ImageDraw, ImageFont
 import io
 import base64
-import os
 from pathlib import Path
 
-# 颜色方案
-COLOR_SCHEMES = [
-    {
-        'name': 'pink',
-        'primary': '#333333',
-        'accent': '#FF9EB5',
-        'bg_circle': '#FFE6E9'
-    },
-    {
-        'name': 'blue',
-        'primary': '#333333',
-        'accent': '#40A9FF',
-        'bg_circle': '#E8F4FF'
-    },
-    {
-        'name': 'green',
-        'primary': '#333333',
-        'accent': '#52C41A',
-        'bg_circle': '#F0FFE6'
-    },
-    {
-        'name': 'purple',
-        'primary': '#333333',
-        'accent': '#9254DE',
-        'bg_circle': '#F5EDFF'
-    },
-    {
-        'name': 'yellow',
-        'primary': '#333333',
-        'accent': '#FAAD14',
-        'bg_circle': '#FFFBE6'
-    }
-]
+# 获取当前文件所在目录
+CURRENT_DIR = Path(__file__).parent
 
-# 表情符号组合
-EMOJI_SETS = [
-    "🥺 💖 ✨",
-    "😊 💓 ✨",
-    "🤗 💕 ✨",
-    "😍 💝 ✨",
-    "🌈 💫 ✨"
-]
-
-def hex_to_rgb(hex_color):
-    """将十六进制颜色转换为RGB元组"""
-    hex_color = hex_color.lstrip('#')
-    return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
-
-def get_font(size):
-    """获取字体"""
-    try:
-        # 尝试使用系统字体
-        system_fonts = [
-            '/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc',  # Linux
-            '/System/Library/Fonts/PingFang.ttc',  # macOS
-            'C:/Windows/Fonts/msyh.ttc',  # Windows
-            '/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf',  # Linux
-        ]
-        
-        for font_path in system_fonts:
-            try:
-                if os.path.exists(font_path):
-                    return ImageFont.truetype(font_path, size)
-            except Exception:
-                continue
-        
-        # 如果找不到任何中文字体，使用默认字体
-        return ImageFont.load_default()
-    except Exception as e:
-        print(f"字体加载错误: {str(e)}")
-        return ImageFont.load_default()
+# 模板图片和字体文件路径
+TEMPLATE_PATH = CURRENT_DIR / "template.png"
+FONT_PATH = CURRENT_DIR / "font.ttf"
 
 def create_png_image(text: str) -> bytes:
-    """创建PNG图像"""
+    """在模板图片上添加文字"""
     try:
-        # 创建图像
-        width, height = 1080, 1080
-        image = Image.new('RGB', (width, height), 'white')
+        # 检查文件是否存在
+        if not TEMPLATE_PATH.exists():
+            raise FileNotFoundError(f"模板图片不存在: {TEMPLATE_PATH}")
+        if not FONT_PATH.exists():
+            raise FileNotFoundError(f"字体文件不存在: {FONT_PATH}")
+        
+        # 打开模板图片
+        image = Image.open(TEMPLATE_PATH)
         draw = ImageDraw.Draw(image)
         
-        # 随机选择颜色方案和表情符号
-        colors = random.choice(COLOR_SCHEMES)
-        emojis = random.choice(EMOJI_SETS)
+        # 加载字体
+        font_large = ImageFont.truetype(str(FONT_PATH), 80)
+        font_medium = ImageFont.truetype(str(FONT_PATH), 70)
         
         # 分割文本
         lines = text.split('\n')
         if len(lines) < 3:
             lines.extend([''] * (3 - len(lines)))
         
-        # 转换颜色
-        primary_color = hex_to_rgb(colors['primary'])
-        accent_color = hex_to_rgb(colors['accent'])
-        bg_circle_color = hex_to_rgb(colors['bg_circle'])
-        
-        # 绘制背景圆圈
-        draw.ellipse([600, -120, 1200, 480], fill=bg_circle_color)
-        
-        # 绘制装饰点
-        for x in [100, 130, 160]:
-            draw.ellipse([x-8, 92, x+8, 108], fill=accent_color)
-        
-        # 获取字体
-        font_large = get_font(80)
-        font_medium = get_font(70)
-        font_small = get_font(40)
-        
         # 绘制文本
         # 第一行文本
-        draw.text((540, 350), lines[0], font=font_large, fill=primary_color, anchor="mm")
+        draw.text((540, 350), lines[0], font=font_large, fill="#333333", anchor="mm")
         
-        # 第二行文本背景
-        text_bbox = draw.textbbox((540, 490), lines[1], font=font_medium, anchor="mm")
-        padding = 40
-        bg_rect = [
-            text_bbox[0] - padding,
-            text_bbox[1] - padding,
-            text_bbox[2] + padding,
-            text_bbox[3] + padding
-        ]
-        draw.rectangle(bg_rect, fill=accent_color + (51,))  # 20% 透明度
-        draw.text((540, 490), lines[1], font=font_medium, fill=primary_color, anchor="mm")
-        
-        # 装饰线
-        draw.rectangle([320, 530, 760, 538], fill=accent_color + (179,))  # 70% 透明度
+        # 第二行文本
+        draw.text((540, 490), lines[1], font=font_medium, fill="#333333", anchor="mm")
         
         # 第三行文本
-        draw.text((540, 620), lines[2], font=font_medium, fill=primary_color, anchor="mm")
-        
-        # 表情符号
-        draw.text((540, 740), emojis, font=font_small, fill=primary_color, anchor="mm")
+        draw.text((540, 620), lines[2], font=font_medium, fill="#333333", anchor="mm")
         
         # 将图像转换为bytes
         img_byte_arr = io.BytesIO()
