@@ -6,6 +6,8 @@ import io
 import base64
 from pathlib import Path
 import random
+import os
+import sys
 
 # 获取当前文件所在目录
 CURRENT_DIR = Path(__file__).parent
@@ -13,6 +15,10 @@ CURRENT_DIR = Path(__file__).parent
 # 图片和字体目录路径
 IMG_DIR = CURRENT_DIR / "img_module"
 FONT_DIR = CURRENT_DIR / "ttf_module"
+
+# 确保目录存在
+IMG_DIR.mkdir(exist_ok=True)
+FONT_DIR.mkdir(exist_ok=True)
 
 # 模板配置
 TEMPLATE_CONFIGS = {
@@ -83,39 +89,72 @@ DEFAULT_CONFIG = {
     }
 }
 
+def get_system_font():
+    """获取系统字体"""
+    system_fonts = [
+        # Linux
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.otf",
+        # macOS
+        "/System/Library/Fonts/PingFang.ttc",
+        # Windows
+        "C:\\Windows\\Fonts\\msyh.ttc",
+    ]
+    
+    for font_path in system_fonts:
+        if os.path.exists(font_path):
+            return font_path
+            
+    # 如果找不到系统字体，使用默认字体
+    return str(FONT_DIR / "NotoSansSC-Bold.otf")
+
 def get_random_file(directory: Path, extensions: list) -> Path:
     """从指定目录随机获取指定扩展名的文件"""
-    files = []
-    for ext in extensions:
-        files.extend(directory.glob(f"*.{ext}"))
-    
-    if not files:
-        raise FileNotFoundError(f"在 {directory} 中没有找到任何{extensions}文件")
-    
-    return random.choice(files)
+    try:
+        files = []
+        for ext in extensions:
+            files.extend(directory.glob(f"*.{ext}"))
+        
+        if not files:
+            # 如果没有找到文件，创建一个空白图片
+            img = Image.new('RGB', (800, 600), color='white')
+            temp_path = directory / "default.png"
+            img.save(str(temp_path))
+            return temp_path
+        
+        return random.choice(files)
+    except Exception as e:
+        print(f"获取文件错误: {str(e)}")
+        # 创建一个空白图片作为后备方案
+        img = Image.new('RGB', (800, 600), color='white')
+        temp_path = directory / "default.png"
+        img.save(str(temp_path))
+        return temp_path
 
 def calculate_font_size(text: str, max_width: int, font_path: str) -> int:
     """计算合适的字体大小"""
-    test_size = 200  # 开始的测试大小
-    font = ImageFont.truetype(str(font_path), test_size)
-    text_width = font.getlength(text)
-    
-    return int(test_size * (max_width / text_width) * 0.95)
+    try:
+        test_size = 100  # 减小初始测试大小以节省内存
+        font = ImageFont.truetype(font_path, test_size)
+        text_width = font.getlength(text)
+        
+        return int(test_size * (max_width / text_width) * 0.95)
+    except Exception as e:
+        print(f"计算字体大小错误: {str(e)}")
+        return 50  # 返回一个安全的默认值
 
 def create_png_image(text: str) -> bytes:
     """在模板图片上添加文字，大字报风格"""
     try:
-        # 随机获取一个图片和字体文件
+        # 获取模板图片
         template_path = get_random_file(IMG_DIR, ["png", "jpg", "jpeg"])
-        font_path = get_random_file(FONT_DIR, ["ttf", "otf"])
+        font_path = get_system_font()
         
-        print(f"使用模板图片: {template_path.name}")
-        print(f"使用字体文件: {font_path.name}")
+        print(f"使用模板图片: {template_path}")
+        print(f"使用字体文件: {font_path}")
         
-        # 打开模板图片并转换为RGB模式（减少内存使用）
-        with Image.open(template_path) as image:
-            image = image.convert('RGB')
-            width, height = image.size
+        # 创建新的图片对象
+        with Image.new('RGB', (800, 600), color='white') as image:
             draw = ImageDraw.Draw(image)
             
             # 分割文本并移除空行
@@ -124,50 +163,52 @@ def create_png_image(text: str) -> bytes:
             # 根据行数调整布局
             if len(lines) == 2:
                 # 两行文字的情况
-                main_title_size = calculate_font_size(lines[0], width * 0.8, font_path)
-                main_font = ImageFont.truetype(str(font_path), main_title_size)
-                subtitle_size = int(main_title_size * 0.7)
-                subtitle_font = ImageFont.truetype(str(font_path), subtitle_size)
-                
-                # 计算位置
-                main_y = height * 0.4
+                main_title_size = min(calculate_font_size(lines[0], 600, font_path), 100)
+                main_font = ImageFont.truetype(font_path, main_title_size)
+                subtitle_size = min(int(main_title_size * 0.7), 70)
+                subtitle_font = ImageFont.truetype(font_path, subtitle_size)
                 
                 # 绘制文字
-                draw.text((width/2, main_y), lines[0], 
+                draw.text((400, 240), lines[0], 
                          font=main_font, fill="#000000", anchor="mm")
-                draw.text((width/2, main_y + main_title_size * 1.3), lines[1], 
+                draw.text((400, 360), lines[1], 
                          font=subtitle_font, fill="#000000", anchor="mm")
             else:
                 # 三行文字的情况
-                main_title_size = calculate_font_size(lines[0], width * 0.8, font_path)
-                main_font = ImageFont.truetype(str(font_path), main_title_size)
-                subtitle_size = int(main_title_size * 0.6)
-                subtitle_font = ImageFont.truetype(str(font_path), subtitle_size)
-                small_title_size = int(main_title_size * 0.4)
-                small_font = ImageFont.truetype(str(font_path), small_title_size)
-                
-                # 计算位置
-                main_y = height * 0.3
+                main_title_size = min(calculate_font_size(lines[0], 600, font_path), 80)
+                main_font = ImageFont.truetype(font_path, main_title_size)
+                subtitle_size = min(int(main_title_size * 0.6), 60)
+                subtitle_font = ImageFont.truetype(font_path, subtitle_size)
+                small_title_size = min(int(main_title_size * 0.4), 40)
+                small_font = ImageFont.truetype(font_path, small_title_size)
                 
                 # 绘制文字
-                draw.text((width/2, main_y), lines[0], 
+                draw.text((400, 180), lines[0], 
                          font=main_font, fill="#000000", anchor="mm")
                 if len(lines) > 1:
-                    draw.text((width/2, main_y + main_title_size * 1.2), lines[1], 
+                    draw.text((400, 300), lines[1], 
                              font=subtitle_font, fill="#000000", anchor="mm")
                 if len(lines) > 2:
-                    draw.text((width/2, main_y + main_title_size * 2.2), lines[2], 
+                    draw.text((400, 420), lines[2], 
                              font=small_font, fill="#000000", anchor="mm")
             
             # 优化内存使用：直接将图像保存到字节流
             img_byte_arr = io.BytesIO()
-            image.save(img_byte_arr, format='PNG', optimize=True)
+            image.save(img_byte_arr, format='PNG', optimize=True, quality=85)
             img_byte_arr.seek(0)
             return img_byte_arr.getvalue()
         
     except Exception as e:
         print(f"创建PNG图片错误: {str(e)}")
-        raise
+        # 创建一个带有错误信息的图片
+        error_img = Image.new('RGB', (800, 600), color='white')
+        draw = ImageDraw.Draw(error_img)
+        draw.text((400, 300), f"Error: {str(e)}", fill="black", anchor="mm")
+        
+        img_byte_arr = io.BytesIO()
+        error_img.save(img_byte_arr, format='PNG')
+        img_byte_arr.seek(0)
+        return img_byte_arr.getvalue()
 
 class handler(BaseHTTPRequestHandler):
     def _set_headers(self, status_code=200):
