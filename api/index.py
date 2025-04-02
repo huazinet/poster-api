@@ -4,206 +4,142 @@ import json
 from PIL import Image, ImageDraw, ImageFont
 import io
 import base64
-from pathlib import Path
 import random
+import requests
+from pathlib import Path
 import os
-import sys
 
-# 获取当前文件所在目录
-CURRENT_DIR = Path(__file__).parent
+# GitHub 仓库信息
+GITHUB_REPO = "huazinet/dazibao-assets"  # 请替换成你的GitHub仓库
+GITHUB_BRANCH = "main"
+GITHUB_RAW_URL = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}"
 
-# 图片和字体目录路径
-IMG_DIR = CURRENT_DIR / "img_module"
-FONT_DIR = CURRENT_DIR / "ttf_module"
+def get_github_file_list(path):
+    """获取 GitHub 仓库中指定路径下的文件列表"""
+    api_url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
+    response = requests.get(api_url)
+    if response.status_code == 200:
+        files = response.json()
+        return [f for f in files if f['type'] == 'file']
+    return []
 
-# 确保目录存在
-IMG_DIR.mkdir(exist_ok=True)
-FONT_DIR.mkdir(exist_ok=True)
+def get_random_file_url(path, extensions):
+    """获取随机文件的 URL"""
+    files = get_github_file_list(path)
+    valid_files = [f for f in files if any(f['name'].lower().endswith(ext) for ext in extensions)]
+    if not valid_files:
+        return None
+    chosen_file = random.choice(valid_files)
+    return f"{GITHUB_RAW_URL}/{path}/{chosen_file['name']}"
 
-# 模板配置
-TEMPLATE_CONFIGS = {
-    # 这里添加特定模板的配置
-    # 'template1.png': {
-    #     'two_lines': {  # 两行文字的配置
-    #         'main_title': {
-    #             'position': (0.5, 0.3),  # 相对位置 (x, y)
-    #             'font_size_ratio': 0.8,  # 字体大小占图片宽度的比例
-    #             'color': '#000000'
-    #         },
-    #         'subtitle': {
-    #             'position': (0.5, 0.6),
-    #             'size_ratio': 0.7,  # 相对于主标题的大小
-    #             'color': '#000000'
-    #         }
-    #     },
-    #     'three_lines': {  # 三行文字的配置
-    #         'main_title': {
-    #             'position': (0.5, 0.2),
-    #             'font_size_ratio': 0.8,
-    #             'color': '#000000'
-    #         },
-    #         'subtitle': {
-    #             'position': (0.5, 0.5),
-    #             'size_ratio': 0.6,
-    #             'color': '#000000'
-    #         },
-    #         'small_title': {
-    #             'position': (0.5, 0.8),
-    #             'size_ratio': 0.4,
-    #             'color': '#000000'
-    #         }
-    #     }
-    # }
-}
+def get_font():
+    """获取字体"""
+    # 首先尝试从 GitHub 获取字体
+    font_url = f"{GITHUB_RAW_URL}/fonts/NotoSansSC-Bold.otf"
+    try:
+        response = requests.get(font_url)
+        if response.status_code == 200:
+            font_data = io.BytesIO(response.content)
+            return ImageFont.truetype(font_data, size=1)  # size会在后面重新设置
+    except:
+        pass
 
-# 默认配置
-DEFAULT_CONFIG = {
-    'two_lines': {
-        'main_title': {
-            'position': (0.5, 0.4),  # 中间偏上
-            'font_size_ratio': 0.8,
-            'color': '#000000'
-        },
-        'subtitle': {
-            'position': (0.5, 0.65),
-            'size_ratio': 0.7,
-            'color': '#000000'
-        }
-    },
-    'three_lines': {
-        'main_title': {
-            'position': (0.5, 0.3),
-            'font_size_ratio': 0.8,
-            'color': '#000000'
-        },
-        'subtitle': {
-            'position': (0.5, 0.5),
-            'size_ratio': 0.6,
-            'color': '#000000'
-        },
-        'small_title': {
-            'position': (0.5, 0.7),
-            'size_ratio': 0.4,
-            'color': '#000000'
-        }
-    }
-}
-
-def get_system_font():
-    """获取系统字体"""
+    # 如果从 GitHub 获取失败，尝试使用系统字体
     system_fonts = [
-        # Linux
         "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.otf",
-        # macOS
         "/System/Library/Fonts/PingFang.ttc",
-        # Windows
         "C:\\Windows\\Fonts\\msyh.ttc",
     ]
     
     for font_path in system_fonts:
         if os.path.exists(font_path):
-            return font_path
-            
-    # 如果找不到系统字体，使用默认字体
-    return str(FONT_DIR / "NotoSansSC-Bold.otf")
+            return ImageFont.truetype(font_path, size=1)
 
-def get_random_file(directory: Path, extensions: list) -> Path:
-    """从指定目录随机获取指定扩展名的文件"""
-    try:
-        files = []
-        for ext in extensions:
-            files.extend(directory.glob(f"*.{ext}"))
-        
-        if not files:
-            # 如果没有找到文件，创建一个空白图片
-            img = Image.new('RGB', (800, 600), color='white')
-            temp_path = directory / "default.png"
-            img.save(str(temp_path))
-            return temp_path
-        
-        return random.choice(files)
-    except Exception as e:
-        print(f"获取文件错误: {str(e)}")
-        # 创建一个空白图片作为后备方案
-        img = Image.new('RGB', (800, 600), color='white')
-        temp_path = directory / "default.png"
-        img.save(str(temp_path))
-        return temp_path
+    # 如果都失败了，创建一个基本的字体
+    return ImageFont.load_default()
 
-def calculate_font_size(text: str, max_width: int, font_path: str) -> int:
+def calculate_font_size(text: str, max_width: int, font) -> int:
     """计算合适的字体大小"""
     try:
-        test_size = 100  # 减小初始测试大小以节省内存
-        font = ImageFont.truetype(font_path, test_size)
+        test_size = 100
+        font = font.font_variant(size=test_size)
         text_width = font.getlength(text)
-        
         return int(test_size * (max_width / text_width) * 0.95)
     except Exception as e:
         print(f"计算字体大小错误: {str(e)}")
-        return 50  # 返回一个安全的默认值
+        return 50
 
 def create_png_image(text: str) -> bytes:
-    """在模板图片上添加文字，大字报风格"""
+    """创建图片"""
     try:
-        # 获取模板图片
-        template_path = get_random_file(IMG_DIR, ["png", "jpg", "jpeg"])
-        font_path = get_system_font()
-        
-        print(f"使用模板图片: {template_path}")
-        print(f"使用字体文件: {font_path}")
-        
-        # 创建新的图片对象
-        with Image.new('RGB', (800, 600), color='white') as image:
-            draw = ImageDraw.Draw(image)
-            
-            # 分割文本并移除空行
-            lines = [line.strip() for line in text.split('\n') if line.strip()]
-            
-            # 根据行数调整布局
-            if len(lines) == 2:
-                # 两行文字的情况
-                main_title_size = min(calculate_font_size(lines[0], 600, font_path), 100)
-                main_font = ImageFont.truetype(font_path, main_title_size)
-                subtitle_size = min(int(main_title_size * 0.7), 70)
-                subtitle_font = ImageFont.truetype(font_path, subtitle_size)
-                
-                # 绘制文字
-                draw.text((400, 240), lines[0], 
-                         font=main_font, fill="#000000", anchor="mm")
-                draw.text((400, 360), lines[1], 
-                         font=subtitle_font, fill="#000000", anchor="mm")
+        # 获取随机背景图片
+        img_url = get_random_file_url('images', ['png', 'jpg', 'jpeg'])
+        if img_url:
+            response = requests.get(img_url)
+            if response.status_code == 200:
+                img_data = io.BytesIO(response.content)
+                with Image.open(img_data) as template:
+                    template = template.convert('RGB')
+                    # 调整图片大小以减少内存使用
+                    template.thumbnail((800, 600), Image.Resampling.LANCZOS)
+                    image = template
             else:
-                # 三行文字的情况
-                main_title_size = min(calculate_font_size(lines[0], 600, font_path), 80)
-                main_font = ImageFont.truetype(font_path, main_title_size)
-                subtitle_size = min(int(main_title_size * 0.6), 60)
-                subtitle_font = ImageFont.truetype(font_path, subtitle_size)
-                small_title_size = min(int(main_title_size * 0.4), 40)
-                small_font = ImageFont.truetype(font_path, small_title_size)
-                
-                # 绘制文字
-                draw.text((400, 180), lines[0], 
-                         font=main_font, fill="#000000", anchor="mm")
-                if len(lines) > 1:
-                    draw.text((400, 300), lines[1], 
-                             font=subtitle_font, fill="#000000", anchor="mm")
-                if len(lines) > 2:
-                    draw.text((400, 420), lines[2], 
-                             font=small_font, fill="#000000", anchor="mm")
-            
-            # 优化内存使用：直接将图像保存到字节流
-            img_byte_arr = io.BytesIO()
-            image.save(img_byte_arr, format='PNG', optimize=True, quality=85)
-            img_byte_arr.seek(0)
-            return img_byte_arr.getvalue()
+                image = Image.new('RGB', (800, 600), color='white')
+        else:
+            image = Image.new('RGB', (800, 600), color='white')
+
+        draw = ImageDraw.Draw(image)
+        width, height = image.size
         
+        # 获取字体
+        base_font = get_font()
+        
+        # 分割文本
+        lines = [line.strip() for line in text.split('\n') if line.strip()]
+        
+        if len(lines) == 2:
+            # 两行文字
+            main_title_size = min(calculate_font_size(lines[0], width * 0.8, base_font), 100)
+            main_font = base_font.font_variant(size=main_title_size)
+            subtitle_size = min(int(main_title_size * 0.7), 70)
+            subtitle_font = base_font.font_variant(size=subtitle_size)
+            
+            draw.text((width/2, height*0.4), lines[0], 
+                     font=main_font, fill="#000000", anchor="mm")
+            draw.text((width/2, height*0.65), lines[1], 
+                     font=subtitle_font, fill="#000000", anchor="mm")
+        else:
+            # 三行文字
+            main_title_size = min(calculate_font_size(lines[0], width * 0.8, base_font), 80)
+            main_font = base_font.font_variant(size=main_title_size)
+            subtitle_size = min(int(main_title_size * 0.6), 60)
+            subtitle_font = base_font.font_variant(size=subtitle_size)
+            small_title_size = min(int(main_title_size * 0.4), 40)
+            small_font = base_font.font_variant(size=small_title_size)
+            
+            draw.text((width/2, height*0.3), lines[0], 
+                     font=main_font, fill="#000000", anchor="mm")
+            if len(lines) > 1:
+                draw.text((width/2, height*0.5), lines[1], 
+                         font=subtitle_font, fill="#000000", anchor="mm")
+            if len(lines) > 2:
+                draw.text((width/2, height*0.7), lines[2], 
+                         font=small_font, fill="#000000", anchor="mm")
+        
+        # 优化内存使用
+        img_byte_arr = io.BytesIO()
+        image.save(img_byte_arr, format='PNG', optimize=True, quality=85)
+        img_byte_arr.seek(0)
+        return img_byte_arr.getvalue()
+    
     except Exception as e:
-        print(f"创建PNG图片错误: {str(e)}")
-        # 创建一个带有错误信息的图片
+        print(f"创建图片错误: {str(e)}")
+        # 创建错误提示图片
         error_img = Image.new('RGB', (800, 600), color='white')
         draw = ImageDraw.Draw(error_img)
-        draw.text((400, 300), f"Error: {str(e)}", fill="black", anchor="mm")
+        font = ImageFont.load_default()
+        draw.text((400, 300), f"Error: {str(e)}", fill="black", anchor="mm", font=font)
         
         img_byte_arr = io.BytesIO()
         error_img.save(img_byte_arr, format='PNG')
@@ -240,24 +176,20 @@ class handler(BaseHTTPRequestHandler):
                 }).encode())
                 return
 
-            # 生成PNG图片
+            # 生成图片
             png_data = create_png_image(data['text'])
             
-            # 转换为base64
-            base64_png = base64.b64encode(png_data).decode('utf-8')
+            # 转换为 base64
+            base64_data = base64.b64encode(png_data).decode('utf-8')
             
-            # 返回base64数据
             self._set_headers()
-            response_data = {
+            self.wfile.write(json.dumps({
                 "success": True,
-                "image_base64": base64_png,
-                "content_type": "image/png"
-            }
-            
-            self.wfile.write(json.dumps(response_data).encode())
+                "data": base64_data
+            }).encode())
 
         except Exception as e:
-            print(f"请求处理错误: {str(e)}")
+            print(f"处理请求错误: {str(e)}")
             self._set_headers(500)
             self.wfile.write(json.dumps({
                 "success": False,
