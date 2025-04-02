@@ -85,11 +85,6 @@ DEFAULT_CONFIG = {
 
 def get_random_file(directory: Path, extensions: list) -> Path:
     """从指定目录随机获取指定扩展名的文件"""
-    # 确保目录存在
-    if not directory.exists():
-        raise FileNotFoundError(f"目录不存在: {directory}")
-    
-    # 获取所有符合扩展名的文件
     files = []
     for ext in extensions:
         files.extend(directory.glob(f"*.{ext}"))
@@ -97,7 +92,6 @@ def get_random_file(directory: Path, extensions: list) -> Path:
     if not files:
         raise FileNotFoundError(f"在 {directory} 中没有找到任何{extensions}文件")
     
-    # 随机选择一个文件
     return random.choice(files)
 
 def calculate_font_size(text: str, max_width: int, font_path: str) -> int:
@@ -106,8 +100,7 @@ def calculate_font_size(text: str, max_width: int, font_path: str) -> int:
     font = ImageFont.truetype(str(font_path), test_size)
     text_width = font.getlength(text)
     
-    # 根据文本宽度调整字体大小
-    return int(test_size * (max_width / text_width) * 0.95)  # 0.95是为了留一些边距
+    return int(test_size * (max_width / text_width) * 0.95)
 
 def create_png_image(text: str) -> bytes:
     """在模板图片上添加文字，大字报风格"""
@@ -119,56 +112,58 @@ def create_png_image(text: str) -> bytes:
         print(f"使用模板图片: {template_path.name}")
         print(f"使用字体文件: {font_path.name}")
         
-        # 打开模板图片
-        image = Image.open(template_path)
-        width, height = image.size
-        draw = ImageDraw.Draw(image)
-        
-        # 分割文本并移除空行
-        lines = [line.strip() for line in text.split('\n') if line.strip()]
-        
-        # 获取模板配置
-        template_config = TEMPLATE_CONFIGS.get(template_path.name, DEFAULT_CONFIG)
-        config = template_config['two_lines'] if len(lines) == 2 else template_config['three_lines']
-        
-        # 主标题配置
-        main_config = config['main_title']
-        main_title_size = calculate_font_size(lines[0], width * main_config['font_size_ratio'], font_path)
-        main_font = ImageFont.truetype(str(font_path), main_title_size)
-        
-        # 计算实际位置
-        main_x = int(width * main_config['position'][0])
-        main_y = int(height * main_config['position'][1])
-        
-        # 绘制主标题
-        draw.text((main_x, main_y), lines[0], 
-                 font=main_font, fill=main_config['color'], anchor="mm")
-        
-        # 绘制副标题
-        if len(lines) > 1:
-            subtitle_config = config['subtitle']
-            subtitle_size = int(main_title_size * subtitle_config['size_ratio'])
-            subtitle_font = ImageFont.truetype(str(font_path), subtitle_size)
-            subtitle_x = int(width * subtitle_config['position'][0])
-            subtitle_y = int(height * subtitle_config['position'][1])
-            draw.text((subtitle_x, subtitle_y), lines[1],
-                     font=subtitle_font, fill=subtitle_config['color'], anchor="mm")
-        
-        # 绘制小标题（如果有）
-        if len(lines) > 2:
-            small_config = config['small_title']
-            small_size = int(main_title_size * small_config['size_ratio'])
-            small_font = ImageFont.truetype(str(font_path), small_size)
-            small_x = int(width * small_config['position'][0])
-            small_y = int(height * small_config['position'][1])
-            draw.text((small_x, small_y), lines[2],
-                     font=small_font, fill=small_config['color'], anchor="mm")
-        
-        # 将图像转换为bytes
-        img_byte_arr = io.BytesIO()
-        image.save(img_byte_arr, format='PNG')
-        img_byte_arr.seek(0)
-        return img_byte_arr.getvalue()
+        # 打开模板图片并转换为RGB模式（减少内存使用）
+        with Image.open(template_path) as image:
+            image = image.convert('RGB')
+            width, height = image.size
+            draw = ImageDraw.Draw(image)
+            
+            # 分割文本并移除空行
+            lines = [line.strip() for line in text.split('\n') if line.strip()]
+            
+            # 根据行数调整布局
+            if len(lines) == 2:
+                # 两行文字的情况
+                main_title_size = calculate_font_size(lines[0], width * 0.8, font_path)
+                main_font = ImageFont.truetype(str(font_path), main_title_size)
+                subtitle_size = int(main_title_size * 0.7)
+                subtitle_font = ImageFont.truetype(str(font_path), subtitle_size)
+                
+                # 计算位置
+                main_y = height * 0.4
+                
+                # 绘制文字
+                draw.text((width/2, main_y), lines[0], 
+                         font=main_font, fill="#000000", anchor="mm")
+                draw.text((width/2, main_y + main_title_size * 1.3), lines[1], 
+                         font=subtitle_font, fill="#000000", anchor="mm")
+            else:
+                # 三行文字的情况
+                main_title_size = calculate_font_size(lines[0], width * 0.8, font_path)
+                main_font = ImageFont.truetype(str(font_path), main_title_size)
+                subtitle_size = int(main_title_size * 0.6)
+                subtitle_font = ImageFont.truetype(str(font_path), subtitle_size)
+                small_title_size = int(main_title_size * 0.4)
+                small_font = ImageFont.truetype(str(font_path), small_title_size)
+                
+                # 计算位置
+                main_y = height * 0.3
+                
+                # 绘制文字
+                draw.text((width/2, main_y), lines[0], 
+                         font=main_font, fill="#000000", anchor="mm")
+                if len(lines) > 1:
+                    draw.text((width/2, main_y + main_title_size * 1.2), lines[1], 
+                             font=subtitle_font, fill="#000000", anchor="mm")
+                if len(lines) > 2:
+                    draw.text((width/2, main_y + main_title_size * 2.2), lines[2], 
+                             font=small_font, fill="#000000", anchor="mm")
+            
+            # 优化内存使用：直接将图像保存到字节流
+            img_byte_arr = io.BytesIO()
+            image.save(img_byte_arr, format='PNG', optimize=True)
+            img_byte_arr.seek(0)
+            return img_byte_arr.getvalue()
         
     except Exception as e:
         print(f"创建PNG图片错误: {str(e)}")
