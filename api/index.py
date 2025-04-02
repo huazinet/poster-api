@@ -10,7 +10,7 @@ from pathlib import Path
 import os
 
 # GitHub 仓库信息
-GITHUB_REPO = "huazinet/dazibao-assets"  # 请替换成你实际的 GitHub 仓库地址
+GITHUB_REPO = "huazinet/dazibao-assets"
 GITHUB_BRANCH = "main"
 GITHUB_RAW_URL = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}"
 
@@ -34,29 +34,51 @@ def get_random_file_url(path, extensions):
 
 def get_font():
     """获取字体"""
+    print("开始加载字体...")
+    
+    # 首先尝试从 GitHub 获取字体
     try:
-        # 首先尝试使用系统字体
-        system_fonts = [
-            "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
-            "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.otf",
-            "/System/Library/Fonts/PingFang.ttc",
-            "C:\\Windows\\Fonts\\msyh.ttc",
-        ]
-        
-        for font_path in system_fonts:
-            if os.path.exists(font_path):
-                return ImageFont.truetype(font_path, size=1)
-
-        # 如果系统字体都不可用，尝试从 GitHub 获取字体
+        print("尝试从 GitHub 获取字体...")
         font_url = f"{GITHUB_RAW_URL}/fonts/NotoSansSC-Bold.otf"
         response = requests.get(font_url)
         if response.status_code == 200:
+            print("成功从 GitHub 获取字体")
             font_data = io.BytesIO(response.content)
-            return ImageFont.truetype(font_data, size=1)  # size会在后面重新设置
+            try:
+                font = ImageFont.truetype(font_data, size=50)  # 使用更大的初始大小
+                # 测试字体是否可用
+                test_text = "测试文字"
+                font.getlength(test_text)
+                print("GitHub 字体加载成功并通过测试")
+                return font
+            except Exception as e:
+                print(f"GitHub 字体测试失败: {str(e)}")
     except Exception as e:
-        print(f"字体加载错误: {str(e)}")
-        
-    # 如果都失败了，使用默认字体
+        print(f"从 GitHub 获取字体失败: {str(e)}")
+
+    # 尝试使用系统字体
+    print("尝试使用系统字体...")
+    system_fonts = [
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.otf",
+        "/System/Library/Fonts/PingFang.ttc",
+        "C:\\Windows\\Fonts\\msyh.ttc",
+    ]
+    
+    for font_path in system_fonts:
+        try:
+            if os.path.exists(font_path):
+                print(f"尝试加载系统字体: {font_path}")
+                font = ImageFont.truetype(font_path, size=50)
+                # 测试字体是否可用
+                test_text = "测试文字"
+                font.getlength(test_text)
+                print(f"系统字体 {font_path} 加载成功并通过测试")
+                return font
+        except Exception as e:
+            print(f"系统字体 {font_path} 加载失败: {str(e)}")
+    
+    print("所有字体加载尝试都失败，使用默认字体")
     return ImageFont.load_default()
 
 def calculate_font_size(text: str, max_width: int, font) -> int:
@@ -65,7 +87,9 @@ def calculate_font_size(text: str, max_width: int, font) -> int:
         test_size = 100
         font = font.font_variant(size=test_size)
         text_width = font.getlength(text)
-        return int(test_size * (max_width / text_width) * 0.95)
+        calculated_size = int(test_size * (max_width / text_width) * 0.95)
+        print(f"计算字体大小: 文本='{text}', 最大宽度={max_width}, 计算结果={calculated_size}")
+        return calculated_size
     except Exception as e:
         print(f"计算字体大小错误: {str(e)}")
         return 50
@@ -73,31 +97,21 @@ def calculate_font_size(text: str, max_width: int, font) -> int:
 def create_png_image(text: str) -> bytes:
     """创建图片"""
     try:
+        print(f"开始处理文本: {text}")
+        
         # 确保文本是 UTF-8 编码
         if isinstance(text, bytes):
             text = text.decode('utf-8')
+        print(f"文本编码处理后: {text}")
         
-        # 获取随机背景图片
-        img_url = get_random_file_url('images', ['png', 'jpg', 'jpeg'])
-        if img_url:
-            response = requests.get(img_url)
-            if response.status_code == 200:
-                img_data = io.BytesIO(response.content)
-                with Image.open(img_data) as template:
-                    template = template.convert('RGB')
-                    # 调整图片大小以减少内存使用
-                    template.thumbnail((800, 600), Image.Resampling.LANCZOS)
-                    image = template
-            else:
-                image = Image.new('RGB', (800, 600), color='white')
-        else:
-            image = Image.new('RGB', (800, 600), color='white')
-
+        # 创建白色背景图片
+        image = Image.new('RGB', (800, 600), color='white')
         draw = ImageDraw.Draw(image)
         width, height = image.size
         
         # 获取字体
         base_font = get_font()
+        print(f"使用字体: {type(base_font)}")
         
         # 分割文本并处理特殊字符
         lines = []
@@ -107,19 +121,24 @@ def create_png_image(text: str) -> bytes:
                 # 移除不可见字符和控制字符
                 line = ''.join(char for char in line if ord(char) >= 32)
                 lines.append(line)
+        print(f"处理后的文本行: {lines}")
         
         if len(lines) == 2:
+            print("处理两行文字布局")
             # 两行文字
             main_title_size = min(calculate_font_size(lines[0], width * 0.8, base_font), 100)
             main_font = base_font.font_variant(size=main_title_size)
             subtitle_size = min(int(main_title_size * 0.7), 70)
             subtitle_font = base_font.font_variant(size=subtitle_size)
             
+            print(f"主标题大小: {main_title_size}, 副标题大小: {subtitle_size}")
+            
             draw.text((width/2, height*0.4), lines[0], 
                      font=main_font, fill="#000000", anchor="mm")
             draw.text((width/2, height*0.65), lines[1], 
                      font=subtitle_font, fill="#000000", anchor="mm")
         else:
+            print("处理三行文字布局")
             # 三行文字
             main_title_size = min(calculate_font_size(lines[0], width * 0.8, base_font), 80)
             main_font = base_font.font_variant(size=main_title_size)
@@ -127,6 +146,8 @@ def create_png_image(text: str) -> bytes:
             subtitle_font = base_font.font_variant(size=subtitle_size)
             small_title_size = min(int(main_title_size * 0.4), 40)
             small_font = base_font.font_variant(size=small_title_size)
+            
+            print(f"主标题大小: {main_title_size}, 副标题大小: {subtitle_size}, 小标题大小: {small_title_size}")
             
             draw.text((width/2, height*0.3), lines[0], 
                      font=main_font, fill="#000000", anchor="mm")
@@ -137,6 +158,7 @@ def create_png_image(text: str) -> bytes:
                 draw.text((width/2, height*0.7), lines[2], 
                          font=small_font, fill="#000000", anchor="mm")
         
+        print("图片生成完成，准备保存")
         # 优化内存使用
         img_byte_arr = io.BytesIO()
         image.save(img_byte_arr, format='PNG', optimize=True, quality=85)
@@ -149,7 +171,9 @@ def create_png_image(text: str) -> bytes:
         error_img = Image.new('RGB', (800, 600), color='white')
         draw = ImageDraw.Draw(error_img)
         font = ImageFont.load_default()
-        draw.text((400, 300), f"Error: {str(e)}", fill="black", anchor="mm", font=font)
+        error_text = f"Error: {str(e)}"
+        print(f"生成错误图片: {error_text}")
+        draw.text((400, 300), error_text, fill="black", anchor="mm", font=font)
         
         img_byte_arr = io.BytesIO()
         error_img.save(img_byte_arr, format='PNG')
@@ -176,16 +200,19 @@ class handler(BaseHTTPRequestHandler):
         try:
             content_length = int(self.headers['Content-Length'])
             post_data = self.rfile.read(content_length)
+            print(f"收到POST请求数据: {post_data[:200]}")  # 只打印前200个字符
             
             # 确保 JSON 解码使用 UTF-8
             data = json.loads(post_data.decode('utf-8'))
+            print(f"解析后的数据: {data}")
 
             if 'text' not in data:
+                print("缺少必要的text参数")
                 self._set_headers(400)
                 self.wfile.write(json.dumps({
                     "success": False,
                     "error": "Missing required parameter: text"
-                }).encode())
+                }).encode('utf-8'))
                 return
 
             # 生成图片
@@ -193,12 +220,14 @@ class handler(BaseHTTPRequestHandler):
             
             # 转换为 base64
             base64_data = base64.b64encode(png_data).decode('utf-8')
+            print("图片生成和编码完成")
             
             self._set_headers()
-            self.wfile.write(json.dumps({
+            response_data = {
                 "success": True,
                 "data": base64_data
-            }).encode('utf-8'))  # 确保使用 UTF-8 编码
+            }
+            self.wfile.write(json.dumps(response_data).encode('utf-8'))
 
         except Exception as e:
             print(f"处理请求错误: {str(e)}")
@@ -206,4 +235,4 @@ class handler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({
                 "success": False,
                 "error": str(e)
-            }).encode('utf-8'))  # 确保使用 UTF-8 编码
+            }).encode('utf-8'))
