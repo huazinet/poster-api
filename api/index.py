@@ -10,7 +10,7 @@ from pathlib import Path
 import os
 
 # GitHub 仓库信息
-GITHUB_REPO = "huazinet/dazibao-assets"  # 请替换成你的GitHub仓库
+GITHUB_REPO = "huazinet/dazibao-assets"  # 请替换成你实际的 GitHub 仓库地址
 GITHUB_BRANCH = "main"
 GITHUB_RAW_URL = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}"
 
@@ -34,29 +34,29 @@ def get_random_file_url(path, extensions):
 
 def get_font():
     """获取字体"""
-    # 首先尝试从 GitHub 获取字体
-    font_url = f"{GITHUB_RAW_URL}/fonts/NotoSansSC-Bold.otf"
     try:
+        # 首先尝试使用系统字体
+        system_fonts = [
+            "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.otf",
+            "/System/Library/Fonts/PingFang.ttc",
+            "C:\\Windows\\Fonts\\msyh.ttc",
+        ]
+        
+        for font_path in system_fonts:
+            if os.path.exists(font_path):
+                return ImageFont.truetype(font_path, size=1)
+
+        # 如果系统字体都不可用，尝试从 GitHub 获取字体
+        font_url = f"{GITHUB_RAW_URL}/fonts/NotoSansSC-Bold.otf"
         response = requests.get(font_url)
         if response.status_code == 200:
             font_data = io.BytesIO(response.content)
             return ImageFont.truetype(font_data, size=1)  # size会在后面重新设置
-    except:
-        pass
-
-    # 如果从 GitHub 获取失败，尝试使用系统字体
-    system_fonts = [
-        "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
-        "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.otf",
-        "/System/Library/Fonts/PingFang.ttc",
-        "C:\\Windows\\Fonts\\msyh.ttc",
-    ]
-    
-    for font_path in system_fonts:
-        if os.path.exists(font_path):
-            return ImageFont.truetype(font_path, size=1)
-
-    # 如果都失败了，创建一个基本的字体
+    except Exception as e:
+        print(f"字体加载错误: {str(e)}")
+        
+    # 如果都失败了，使用默认字体
     return ImageFont.load_default()
 
 def calculate_font_size(text: str, max_width: int, font) -> int:
