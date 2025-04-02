@@ -73,6 +73,10 @@ def calculate_font_size(text: str, max_width: int, font) -> int:
 def create_png_image(text: str) -> bytes:
     """创建图片"""
     try:
+        # 确保文本是 UTF-8 编码
+        if isinstance(text, bytes):
+            text = text.decode('utf-8')
+        
         # 获取随机背景图片
         img_url = get_random_file_url('images', ['png', 'jpg', 'jpeg'])
         if img_url:
@@ -95,8 +99,14 @@ def create_png_image(text: str) -> bytes:
         # 获取字体
         base_font = get_font()
         
-        # 分割文本
-        lines = [line.strip() for line in text.split('\n') if line.strip()]
+        # 分割文本并处理特殊字符
+        lines = []
+        for line in text.split('\n'):
+            line = line.strip()
+            if line:
+                # 移除不可见字符和控制字符
+                line = ''.join(char for char in line if ord(char) >= 32)
+                lines.append(line)
         
         if len(lines) == 2:
             # 两行文字
@@ -166,6 +176,8 @@ class handler(BaseHTTPRequestHandler):
         try:
             content_length = int(self.headers['Content-Length'])
             post_data = self.rfile.read(content_length)
+            
+            # 确保 JSON 解码使用 UTF-8
             data = json.loads(post_data.decode('utf-8'))
 
             if 'text' not in data:
@@ -186,7 +198,7 @@ class handler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({
                 "success": True,
                 "data": base64_data
-            }).encode())
+            }).encode('utf-8'))  # 确保使用 UTF-8 编码
 
         except Exception as e:
             print(f"处理请求错误: {str(e)}")
@@ -194,4 +206,4 @@ class handler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({
                 "success": False,
                 "error": str(e)
-            }).encode())
+            }).encode('utf-8'))  # 确保使用 UTF-8 编码
