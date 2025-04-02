@@ -36,28 +36,54 @@ def get_font():
     """获取字体"""
     print("开始加载字体...")
     
-    # 首先尝试从 GitHub 获取字体
+    # 从 GitHub 获取字体列表
     try:
-        print("尝试从 GitHub 获取字体...")
-        font_url = f"{GITHUB_RAW_URL}/fonts/NotoSansSC-Bold.otf"
-        response = requests.get(font_url)
-        if response.status_code == 200:
-            print("成功从 GitHub 获取字体")
-            font_data = io.BytesIO(response.content)
-            try:
-                font = ImageFont.truetype(font_data, size=50)  # 使用更大的初始大小
-                # 测试字体是否可用
-                test_text = "测试文字"
-                font.getlength(test_text)
-                print("GitHub 字体加载成功并通过测试")
-                return font
-            except Exception as e:
-                print(f"GitHub 字体测试失败: {str(e)}")
+        print("尝试从 GitHub 获取字体列表...")
+        font_files = get_github_file_list('fonts')
+        valid_fonts = [f for f in font_files if f['name'].lower().endswith(('.ttf', '.otf'))]
+        
+        if valid_fonts:
+            # 随机选择一个字体
+            chosen_font = random.choice(valid_fonts)
+            font_url = f"{GITHUB_RAW_URL}/fonts/{chosen_font['name']}"
+            print(f"选择字体: {chosen_font['name']}")
+            
+            response = requests.get(font_url)
+            if response.status_code == 200:
+                print("成功从 GitHub 获取字体")
+                font_data = io.BytesIO(response.content)
+                try:
+                    font = ImageFont.truetype(font_data, size=50)
+                    # 测试字体是否可用
+                    test_text = "测试文字"
+                    font.getlength(test_text)
+                    print("GitHub 字体加载成功并通过测试")
+                    return font
+                except Exception as e:
+                    print(f"GitHub 字体测试失败: {str(e)}")
     except Exception as e:
         print(f"从 GitHub 获取字体失败: {str(e)}")
 
+    # 尝试使用 Vercel 环境中的字体
+    try:
+        print("尝试从 Vercel 环境获取字体列表...")
+        vercel_font_dir = "/var/task/api/fonts"
+        if os.path.exists(vercel_font_dir):
+            font_files = [f for f in os.listdir(vercel_font_dir) 
+                        if f.lower().endswith(('.ttf', '.otf'))]
+            if font_files:
+                chosen_font = random.choice(font_files)
+                font_path = os.path.join(vercel_font_dir, chosen_font)
+                print(f"选择 Vercel 环境字体: {chosen_font}")
+                font = ImageFont.truetype(font_path, size=50)
+                test_text = "测试文字"
+                font.getlength(test_text)
+                print(f"Vercel 环境字体加载成功: {chosen_font}")
+                return font
+    except Exception as e:
+        print(f"Vercel 环境字体加载失败: {str(e)}")
+
     # 尝试使用系统字体
-    print("尝试使用系统字体...")
     system_fonts = [
         "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.otf",
@@ -65,18 +91,18 @@ def get_font():
         "C:\\Windows\\Fonts\\msyh.ttc",
     ]
     
+    random.shuffle(system_fonts)  # 随机打乱系统字体列表
     for font_path in system_fonts:
         try:
             if os.path.exists(font_path):
                 print(f"尝试加载系统字体: {font_path}")
                 font = ImageFont.truetype(font_path, size=50)
-                # 测试字体是否可用
                 test_text = "测试文字"
                 font.getlength(test_text)
-                print(f"系统字体 {font_path} 加载成功并通过测试")
+                print(f"系统字体加载成功: {font_path}")
                 return font
         except Exception as e:
-            print(f"系统字体 {font_path} 加载失败: {str(e)}")
+            print(f"系统字体加载失败: {str(e)}")
     
     print("所有字体加载尝试都失败，使用默认字体")
     return ImageFont.load_default()
@@ -104,14 +130,30 @@ def create_png_image(text: str) -> bytes:
             text = text.decode('utf-8')
         print(f"文本编码处理后: {text}")
         
-        # 创建白色背景图片
-        image = Image.new('RGB', (800, 600), color='white')
-        draw = ImageDraw.Draw(image)
+        # 获取随机背景图片
+        img_url = get_random_file_url('images', ['png', 'jpg', 'jpeg'])
+        if img_url:
+            print(f"获取到背景图片: {img_url}")
+            response = requests.get(img_url)
+            if response.status_code == 200:
+                img_data = io.BytesIO(response.content)
+                image = Image.open(img_data).convert('RGB')
+                # 调整图片大小以减少内存使用
+                image.thumbnail((800, 600), Image.Resampling.LANCZOS)
+                print("成功加载背景图片")
+            else:
+                print("背景图片加载失败，使用白色背景")
+                image = Image.new('RGB', (800, 600), color='white')
+        else:
+            print("未找到背景图片，使用白色背景")
+            image = Image.new('RGB', (800, 600), color='white')
+
         width, height = image.size
+        draw = ImageDraw.Draw(image)
         
         # 获取字体
         base_font = get_font()
-        print(f"使用字体: {type(base_font)}")
+        print(f"使用字体类型: {type(base_font)}")
         
         # 分割文本并处理特殊字符
         lines = []
@@ -133,8 +175,19 @@ def create_png_image(text: str) -> bytes:
             
             print(f"主标题大小: {main_title_size}, 副标题大小: {subtitle_size}")
             
+            # 添加文字阴影效果
+            shadow_offset = 3
+            shadow_color = "#666666"
+            
+            # 绘制主标题阴影和文字
+            draw.text((width/2 + shadow_offset, height*0.4 + shadow_offset), lines[0], 
+                     font=main_font, fill=shadow_color, anchor="mm")
             draw.text((width/2, height*0.4), lines[0], 
                      font=main_font, fill="#000000", anchor="mm")
+            
+            # 绘制副标题阴影和文字
+            draw.text((width/2 + shadow_offset, height*0.65 + shadow_offset), lines[1], 
+                     font=subtitle_font, fill=shadow_color, anchor="mm")
             draw.text((width/2, height*0.65), lines[1], 
                      font=subtitle_font, fill="#000000", anchor="mm")
         else:
@@ -149,12 +202,27 @@ def create_png_image(text: str) -> bytes:
             
             print(f"主标题大小: {main_title_size}, 副标题大小: {subtitle_size}, 小标题大小: {small_title_size}")
             
+            # 添加文字阴影效果
+            shadow_offset = 3
+            shadow_color = "#666666"
+            
+            # 绘制主标题阴影和文字
+            draw.text((width/2 + shadow_offset, height*0.3 + shadow_offset), lines[0], 
+                     font=main_font, fill=shadow_color, anchor="mm")
             draw.text((width/2, height*0.3), lines[0], 
                      font=main_font, fill="#000000", anchor="mm")
+            
             if len(lines) > 1:
+                # 绘制副标题阴影和文字
+                draw.text((width/2 + shadow_offset, height*0.5 + shadow_offset), lines[1], 
+                         font=subtitle_font, fill=shadow_color, anchor="mm")
                 draw.text((width/2, height*0.5), lines[1], 
                          font=subtitle_font, fill="#000000", anchor="mm")
+            
             if len(lines) > 2:
+                # 绘制小标题阴影和文字
+                draw.text((width/2 + shadow_offset, height*0.7 + shadow_offset), lines[2], 
+                         font=small_font, fill=shadow_color, anchor="mm")
                 draw.text((width/2, height*0.7), lines[2], 
                          font=small_font, fill="#000000", anchor="mm")
         
